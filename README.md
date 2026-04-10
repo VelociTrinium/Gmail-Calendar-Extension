@@ -1,4 +1,4 @@
-# Gmail Smart Calendar 🗓
+# Gmail Smart Calendar 
 
 > An AI-powered Chrome Extension + FastAPI backend that detects time-sensitive academic events from Gmail and adds them to Google Calendar — with your approval.
 
