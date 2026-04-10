@@ -195,13 +195,13 @@ Return ONLY a valid JSON object. No markdown, no explanation, no code fences.
 
 Required JSON format:
 {{
-  "should_create_event": true or false,
-  "title": "Short descriptive event title",
-  "date": "YYYY-MM-DD",
-  "start_time": "HH:MM",
-  "end_time": "HH:MM",
-  "timezone": "Asia/Kolkata",
-  "description": "Brief summary of the event"
+    "should_create_event": true or false,
+    "title": "Short descriptive event title",
+    "date": "YYYY-MM-DD",
+    "start_time": "HH:MM",
+    "end_time": "HH:MM",
+    "timezone": "Asia/Kolkata",
+    "description": "Brief summary of the event"
 }}
 
 Rules:

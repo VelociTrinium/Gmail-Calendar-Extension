@@ -15,32 +15,44 @@ let observerAttached     = false;
 // ─── Regex Patterns for Time-Sensitivity Detection ───────────────────────────
 
 const TIME_SENSITIVE_PATTERNS = [
-  // Absolute dates
-  /\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b/,           // 12/04/2026 or 12-04-26
-  /\b\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}\b/,              // 2026-04-12
-  /\b\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b/i,
-  /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?\b/i,
+  // 1. Enhanced Numeric Dates (Added dots and optional year)
+  /\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/,            // 12.04.2026, 12/04/26
+  /\b\d{4}[./-]\d{1,2}[./-]\d{1,2}\b/,            // 2026-04-12
 
-  // Times
-  /\b\d{1,2}:\d{2}\s*(?:AM|PM|am|pm)\b/,              // 2:30 PM
-  /\b(?:[01]?\d|2[0-3]):[0-5]\d\b/,                    // 14:30 (24-hour)
+  // 2. Enhanced Textual Dates (Supports "Jan 12, 2026" and abbreviations with dots)
+  /\b\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?(?:\s+\d{2,4})?\b/i,
+  /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s+\d{2,4})?\b/i,
 
-  // Relative keywords
-  /\b(?:today|tomorrow|tonight|yesterday)\b/i,
-  /\b(?:this|next|last)\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|week|month)\b/i,
+  // 3. Robust Times (Added '9pm' style and Time Zones)
+  /\b\d{1,2}(?::\d{2})?\s*(?:AM|PM|am|pm)\b/,      // 2pm, 2:30 PM
+  /\b(?:[01]?\d|2[0-3]):[0-5]\d\b/,               // 14:30
+  /\b(?:UTC|GMT|EST|PST|IST|CST|CET|JST)\b/,      // Timezone abbreviations
+
+  // 4. Natural Language & Durations
+  /\b\d+\s*(?:sec|min|hour|hr|day|week|month)s?\s+(?:ago|later|from now|remaining)\b/i, // "2 hours later"
+  /\bin\s+\d+\s*(?:min|hour|day|week)s?\b/i,      // "in 5 minutes"
+
+  // 5. Business Shorthand & Urgency
+  /\b(?:EOD|COB|ASAP|urgently|immediately|action\s+required|reminder|expiring)\b/i,
+
+  // 6. Relative & Events (Added 'upcoming' and 'quarter')
+  /\b(?:today|tomorrow|tonight|yesterday|now)\b/i,
+  /\b(?:this|next|last|upcoming|following)\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|week|month|year|quarter|weekend)\b/i,
   /\bMonday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday\b/i,
-  /\bdeadline|due\s+(?:date|by)|submit(?:ted|ting)?|submission\b/i,
-  /\bmeeting|interview|internship|orientation|exam|test|quiz|assignment\b/i,
-  /\bby\s+(?:end\s+of\s+)?(?:day|week|month|semester)\b/i,
-  /\bschedule[d]?|appointment|event|session|workshop|seminar\b/i,
+  
+  // 7. Contextual Keywords (Expanded)
+  /\b(?:deadline|due|submit(?:ted|ting)?|submission|cutoff|expire[sd]?|valid)\b/i,
+  /\b(?:meeting|interview|internship|orientation|exam|test|quiz|assignment|call|webinar|rsvp|booking)\b/i,
+  /\bby\s+(?:end\s+of\s+)?(?:day|week|month|semester|year|business)\b/i,
+  /\b(?:schedule[d]?|appointment|event|session|workshop|seminar|alert|notification)\b/i,
 ];
 
 /**
  * Returns true if the email text contains time-sensitive content.
- * This prevents unnecessary Groq API calls.
  */
 function isTimeSensitive(subject, body) {
-  const combined = `${subject} ${body}`;
+  // Added a check for empty inputs to prevent errors
+  const combined = `${subject || ''} ${body || ''}`;
   return TIME_SENSITIVE_PATTERNS.some(pattern => pattern.test(combined));
 }
 
