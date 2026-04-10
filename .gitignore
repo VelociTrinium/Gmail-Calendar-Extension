@@ -2,5 +2,4 @@
 venv/
 .vscode/
 __pycache__/
-backend/token.json
-backend/credentials.json
+backend/*

@@ -13,6 +13,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from fastapi import Request
 
 from groq import Groq
 from google.oauth2.credentials import Credentials
@@ -27,16 +29,18 @@ log = logging.getLogger(__name__)
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
-GROQ_MODEL          = "llama3-70b-8192"
+GROQ_MODEL          = "llama-3.3-70b-versatile"
 GOOGLE_SCOPES       = ["https://www.googleapis.com/auth/calendar.events"]
 CREDENTIALS_PATH    = "credentials.json"
 TOKEN_PATH          = "token.json"
 DEFAULT_TIMEZONE    = "Asia/Kolkata"
 DEFAULT_EVENT_HOURS = 1
+CACHE_FILE = "processed_emails.json"
 
 # ─── Models ───────────────────────────────────────────────────────────────────
 
 class EmailPayload(BaseModel):
+    email_id: str
     subject: str
     body: str
     sender: str = ""
@@ -50,6 +54,24 @@ class EventPayload(BaseModel):
     timezone: str    = DEFAULT_TIMEZONE
     description: str = ""
     should_create_event: bool = True
+
+# ─── Helper Functions ──────────────────────────────────────────────────────────
+
+def load_email_cache() -> dict:
+    if not os.path.exists(CACHE_FILE): return {}
+    try:
+        with open(CACHE_FILE, "r") as f:
+            content = f.read().strip()
+            return json.loads(content) if content else {}
+    except Exception as e:
+        log.error(f"Cache load failed: {e}")
+        return {}
+
+def save_to_email_cache(email_id: str, data: dict):
+    cache = load_email_cache()
+    cache[email_id] = data
+    with open(CACHE_FILE, "w") as f:
+        json.dump(cache, f, indent=4)
 
 # ─── Google Calendar ──────────────────────────────────────────────────────────
 
@@ -139,11 +161,21 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://mail.google.com"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    log.error(f"GLOBAL ERROR: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc)},
+        # Manually add headers here in case the middleware is bypassed
+        headers={"Access-Control-Allow-Origin": "https://mail.google.com"}
+    )
 
 # ─── Groq LLM ─────────────────────────────────────────────────────────────────
 
@@ -154,13 +186,13 @@ Analyze the email below and return ONLY a valid JSON object. No markdown, no exp
 
 JSON format:
 {{
-  "should_create_event": true,
-  "title": "Concise event title (max 60 chars)",
-  "date": "YYYY-MM-DD",
-  "start_time": "HH:MM",
-  "end_time": "HH:MM",
-  "timezone": "Asia/Kolkata",
-  "description": "1-2 sentence summary of what the student must do or attend"
+    "should_create_event": true,
+    "title": "Concise event title (max 60 chars)",
+    "date": "YYYY-MM-DD",
+    "start_time": "HH:MM",
+    "end_time": "HH:MM",
+    "timezone": "Asia/Kolkata",
+    "description": "1-2 sentence summary of what the student must do or attend"
 }}
 
 Rules:
@@ -184,6 +216,12 @@ def run_groq(subject: str, body: str, sender: str) -> dict:
             status_code=500,
             detail="GROQ_API_KEY not set. In PowerShell: $env:GROQ_API_KEY = 'your_key_here'"
         )
+    try:
+        # If you are using a very recent version, use this:
+        client = Groq(api_key=groq_key, http_client=None) 
+    except TypeError:
+        # Fallback for older versions
+        client = Groq(api_key=groq_key)
 
     client = Groq(api_key=groq_key)
     prompt = EXTRACTION_PROMPT.format(
@@ -296,22 +334,34 @@ def auth_google():
 
 @app.post("/extract-event")
 async def extract_event(payload: EmailPayload):
-    """
-    Called ONLY after the user clicks YES in the Stage 1 popup.
-    Uses Groq to extract structured event data from the email.
-    Returns { should_create_event, title, date, start_time, end_time, timezone, description }
-    """
-    if not payload.subject and not payload.body:
-        raise HTTPException(status_code=400, detail="Subject and body both empty.")
+    # 1. Check local JSON cache
+    cache = load_email_cache()
+    if payload.email_id in cache:
+        log.info(f"Cache hit for {payload.email_id}")
+        return cache[payload.email_id]
 
+    # 2. Call Groq if not found
     result = run_groq(payload.subject, payload.body, payload.sender)
-
-    # Validate: if Groq says create but didn't produce a date, override
-    if result.get("should_create_event") and not result.get("date"):
-        log.warning("Groq said should_create_event=true but no date — overriding.")
-        result["should_create_event"] = False
-
+    
+    # 3. Save to JSON cache
+    save_to_email_cache(payload.email_id, result)
     return result
+    # """
+    # Called ONLY after the user clicks YES in the Stage 1 popup.
+    # Uses Groq to extract structured event data from the email.
+    # Returns { should_create_event, title, date, start_time, end_time, timezone, description }
+    # """
+    # if not payload.subject and not payload.body:
+    #     raise HTTPException(status_code=400, detail="Subject and body both empty.")
+
+    # result = run_groq(payload.subject, payload.body, payload.sender)
+
+    # # Validate: if Groq says create but didn't produce a date, override
+    # if result.get("should_create_event") and not result.get("date"):
+    #     log.warning("Groq said should_create_event=true but no date — overriding.")
+    #     result["should_create_event"] = False
+
+    # return result
 
 
 # ── NEW: Calendar add endpoint ────────────────────────────────

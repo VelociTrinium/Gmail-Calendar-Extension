@@ -43,8 +43,8 @@ function extractEmailData(row) {
     let senderEl    = row.querySelector('[email]');
     let senderEmail = senderEl ? senderEl.getAttribute('email').toLowerCase() : "";
 
-    let mailHeaderEl = row.querySelector('.y6');
-    let mailHeader   = mailHeaderEl ? mailHeaderEl.innerText.toLowerCase() : "";
+    // let mailHeaderEl = row.querySelector('.y6');
+    // let mailHeader   = mailHeaderEl ? mailHeaderEl.innerText.toLowerCase() : "";
 
     let snippetEl = row.querySelector('.y2');
     let snippet   = snippetEl ? snippetEl.innerText.toLowerCase() : "";
@@ -52,7 +52,8 @@ function extractEmailData(row) {
     let subjectEl = row.querySelector('.bog');
     let subject   = subjectEl ? subjectEl.innerText.toLowerCase() : "";
 
-    return { senderEmail, mailHeader, snippet, subject };
+    return { senderEmail, snippet, subject };
+    // return { senderEmail, mailHeader, snippet, subject };
 }
 
 // ---------------- 3. CLASSIFICATION LOGIC ----------------
@@ -64,7 +65,7 @@ function getEmailCategory(data) {
 
     for (let rule of classificationRules) {
         if (matchesAny(rule.senders,   data.senderEmail)) return rule;
-        if (matchesAny(rule.mailHeader, data.mailHeader)) return rule;
+        // if (matchesAny(rule.mailHeader, data.mailHeader)) return rule;
         if (matchesAny(rule.contents,  data.snippet))    return rule;
         if (matchesAny(rule.subjects,  data.subject))    return rule;
     }
@@ -542,7 +543,7 @@ const AI = (() => {
         const res = await fetch(`${BACKEND}/extract-event`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ subject, body, sender }),
+            body: JSON.stringify({ email_id: makeKey(subject, sender), subject, body, sender }),
         });
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
