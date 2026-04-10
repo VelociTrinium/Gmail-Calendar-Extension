@@ -1,27 +1,21 @@
 {
-  "manifest_version": 3,
-  "name": "Gmail Smart Calendar — AI Event Detector",
-  "version": "1.0.0",
-  "description": "Detects time-sensitive academic events from Gmail and adds them to Google Calendar with your approval.",
-  "permissions": ["activeTab", "scripting", "storage"],
-  "host_permissions": [
-    "https://mail.google.com/*",
-    "http://localhost:8000/*"
-  ],
-  "content_scripts": [
-    {
-      "matches": ["https://mail.google.com/*"],
-      "js": ["content.js"],
-      "css": ["styles.css"],
-      "run_at": "document_idle"
-    }
-  ],
-  "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
-  },
-  "action": {
-    "default_title": "Gmail Smart Calendar"
-  }
+    "manifest_version": 3,
+    "name": "Gmail Sorter + Smart Calendar",
+    "version": "2.0",
+    "description": "Categorizes Gmail emails with color-coded highlights and detects time-sensitive events for Google Calendar.",
+    "permissions": ["activeTab", "scripting", "storage"],
+    "host_permissions": [
+        "https://mail.google.com/*",
+        "http://localhost:8000/*"
+    ],
+    "action": {
+        "default_popup": "popup.html"
+    },
+    "content_scripts": [
+        {
+            "matches": ["https://mail.google.com/*"],
+            "js": ["content.js"],
+            "run_at": "document_idle"
+        }
+    ]
 }
