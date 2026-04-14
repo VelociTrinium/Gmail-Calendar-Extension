@@ -4,6 +4,14 @@
 
 // ---------------- 1. THE RULE ENGINE ----------------
 const classificationRules = [
+    // {
+    //     id: "work",
+    //     backgroundColor: "#cce5ff8a",
+    //     textColor: "inherit",
+    //     senders: ["boss@mycompany.com"],
+    //     subjects: ["meeting", "project update", "urgent"],
+    //     contents: ["zoom link", "google meet"]
+    // },
     {
         id: "internship",
         backgroundColor: "#68eb8688",
@@ -16,17 +24,9 @@ const classificationRules = [
         id: "nptel",
         backgroundColor: "#f8d7da8a",
         textColor: "inherit",
-        senders: ["@nptel.iitm.ac.in", "swayam"],
-        subjects: ["assignment", "certificate", "exam registration"],
+        senders: ["@nptel.iitm.ac.in", "swayam", "onlinecourses@nptel.iitm.ac.in", "support@nptel.iitm.ac.in"],
+        subjects: ["certificate", "exam registration"],
         contents: []
-    },
-    {
-        id: "work",
-        backgroundColor: "#cce5ff8a",
-        textColor: "inherit",
-        senders: ["boss@mycompany.com"],
-        subjects: ["meeting", "project update", "urgent"],
-        contents: ["zoom link", "google meet"]
     },
     {
         id: "chotadhobi",
@@ -35,6 +35,22 @@ const classificationRules = [
         senders: ["boss@mycompany.com"],
         subjects: ["Chotadhobi", "Laundry ", "Delivery Confirmation"],
         contents: []
+    },
+    {
+        id: "moovit",
+        backgroundColor: "#7061f07f",
+        textColor: "inherit",
+        senders: ["noreply.moovit@vit.ac.in"],
+        subjects: ["Moovit", "assignment", "quiz"],
+        contents: ["assignment", "quiz"]
+    },
+    {
+        id: "academic",
+        backgroundColor: "#7061f07f",
+        textColor: "inherit",
+        senders: [],
+        subjects: ["Moovit", "assignment", "quiz"],
+        contents: ["assignment", "quiz"]
     },
 ];
 
