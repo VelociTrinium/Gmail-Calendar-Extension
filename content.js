@@ -49,7 +49,7 @@ const classificationRules = [
         backgroundColor: "#7061f07f",
         textColor: "inherit",
         senders: [],
-        subjects: ["Moovit", "assignment", "quiz"],
+        subjects: ["Lab", "Fat", "Cat"],
         contents: ["assignment", "quiz"]
     },
 ];
