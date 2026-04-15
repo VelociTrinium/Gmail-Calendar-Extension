@@ -46,7 +46,7 @@ const classificationRules = [
     },
     {
         id: "academic",
-        backgroundColor: "#7061f07f",
+        backgroundColor: "#d571f47f",
         textColor: "inherit",
         senders: [],
         subjects: ["Lab", "Fat", "Cat"],
