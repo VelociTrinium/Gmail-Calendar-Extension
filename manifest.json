@@ -1,9 +1,13 @@
 {
     "manifest_version": 3,
     "name": "Gmail Sorter + Smart Calendar",
-    "version": "2.0",
-    "description": "Categorizes Gmail emails with color-coded highlights and detects time-sensitive events for Google Calendar.",
-    "permissions": ["activeTab", "scripting", "storage"],
+    "version": "3.0",
+    "description": "Categorizes Gmail emails and detects time-sensitive events for Google Calendar using Gmail thread IDs.",
+    "permissions": [
+        "activeTab",
+        "scripting",
+        "storage"
+    ],
     "host_permissions": [
         "https://mail.google.com/*",
         "http://localhost:8000/*"

@@ -1,7 +1,9 @@
 """
-Gmail Smart Calendar — FastAPI Backend v2
-New endpoints: /extract-event and /calendar/add
-All existing /analyze and /create-event routes preserved for compatibility.
+Gmail Smart Calendar — FastAPI Backend v3
+Changes from v2:
+- /extract-event now accepts and logs gmail_id from the request payload
+- /calendar/add unchanged
+- All legacy routes preserved
 """
 
 import os
@@ -9,12 +11,11 @@ import json
 import logging
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from fastapi.responses import JSONResponse
-from fastapi import Request
 
 from groq import Groq
 from google.oauth2.credentials import Credentials
@@ -29,49 +30,29 @@ log = logging.getLogger(__name__)
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
-GROQ_MODEL          = "llama-3.3-70b-versatile"
+GROQ_MODEL          = "llama3-70b-8192"
 GOOGLE_SCOPES       = ["https://www.googleapis.com/auth/calendar.events"]
 CREDENTIALS_PATH    = "credentials.json"
 TOKEN_PATH          = "token.json"
 DEFAULT_TIMEZONE    = "Asia/Kolkata"
 DEFAULT_EVENT_HOURS = 1
-CACHE_FILE = "processed_emails.json"
 
-# ─── Models ───────────────────────────────────────────────────────────────────
+# ─── Pydantic Models ──────────────────────────────────────────────────────────
 
 class EmailPayload(BaseModel):
-    email_id: str
     subject: str
     body: str
-    sender: str = ""
+    sender: str          = ""
+    gmail_id: Optional[str] = None   # Gmail thread ID — passed from extension for logging
 
 class EventPayload(BaseModel):
-    """The structured event data returned by Groq and sent back for calendar creation."""
     title: str
     date: str
-    start_time: str  = "09:00"
-    end_time: str    = ""
-    timezone: str    = DEFAULT_TIMEZONE
-    description: str = ""
+    start_time: str      = "09:00"
+    end_time: str        = ""
+    timezone: str        = DEFAULT_TIMEZONE
+    description: str     = ""
     should_create_event: bool = True
-
-# ─── Helper Functions ──────────────────────────────────────────────────────────
-
-def load_email_cache() -> dict:
-    if not os.path.exists(CACHE_FILE): return {}
-    try:
-        with open(CACHE_FILE, "r") as f:
-            content = f.read().strip()
-            return json.loads(content) if content else {}
-    except Exception as e:
-        log.error(f"Cache load failed: {e}")
-        return {}
-
-def save_to_email_cache(email_id: str, data: dict):
-    cache = load_email_cache()
-    cache[email_id] = data
-    with open(CACHE_FILE, "w") as f:
-        json.dump(cache, f, indent=4)
 
 # ─── Google Calendar ──────────────────────────────────────────────────────────
 
@@ -124,7 +105,7 @@ def get_calendar_service():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info("=" * 56)
-    log.info("Gmail Smart Calendar backend v2 starting…")
+    log.info("Gmail Smart Calendar backend v3 starting…")
     log.info("=" * 56)
 
     groq_key = os.environ.get("GROQ_API_KEY", "").strip()
@@ -146,61 +127,52 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             log.error(f"Google auth failed: {e}")
 
-    log.info("Docs: http://localhost:8000/docs")
+    log.info("Docs:   http://localhost:8000/docs")
+    log.info("Health: http://localhost:8000/health")
     log.info("=" * 56)
     yield
     log.info("Shutting down.")
 
-# ─── App ──────────────────────────────────────────────────────────────────────
+# ─── FastAPI App ──────────────────────────────────────────────────────────────
 
 app = FastAPI(
     title="Gmail Smart Calendar API",
-    version="2.0.0",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://mail.google.com"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    log.error(f"GLOBAL ERROR: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={"detail": str(exc)},
-        # Manually add headers here in case the middleware is bypassed
-        headers={"Access-Control-Allow-Origin": "https://mail.google.com"}
-    )
 
 # ─── Groq LLM ─────────────────────────────────────────────────────────────────
 
 EXTRACTION_PROMPT = """
 You are an AI assistant that extracts structured calendar event data from emails sent to college students.
 
-Analyze the email below and return ONLY a valid JSON object. No markdown, no explanation, no code fences.
+Analyze the email and return ONLY a valid JSON object. No markdown, no explanation, no code fences.
 
 JSON format:
 {{
-    "should_create_event": true,
-    "title": "Concise event title (max 60 chars)",
-    "date": "YYYY-MM-DD",
-    "start_time": "HH:MM",
-    "end_time": "HH:MM",
-    "timezone": "Asia/Kolkata",
-    "description": "1-2 sentence summary of what the student must do or attend"
+  "should_create_event": true,
+  "title": "Concise event title (max 60 chars)",
+  "date": "YYYY-MM-DD",
+  "start_time": "HH:MM",
+  "end_time": "HH:MM",
+  "timezone": "Asia/Kolkata",
+  "description": "1-2 sentence summary of what the student must do or attend"
 }}
 
 Rules:
 - Set should_create_event to false if no specific time-sensitive event exists.
-- Use 24-hour time (e.g. 14:30).
+- Use 24-hour time format.
 - Set end_time to "" if unknown.
 - Resolve relative dates ("tomorrow", "next Monday") relative to today: {today}.
-- If year is missing and date seems upcoming, use {current_year}.
+- If year is missing and the date is upcoming, use {current_year}.
 
 Email:
 Subject: {subject}
@@ -216,12 +188,6 @@ def run_groq(subject: str, body: str, sender: str) -> dict:
             status_code=500,
             detail="GROQ_API_KEY not set. In PowerShell: $env:GROQ_API_KEY = 'your_key_here'"
         )
-    try:
-        # If you are using a very recent version, use this:
-        client = Groq(api_key=groq_key, http_client=None) 
-    except TypeError:
-        # Fallback for older versions
-        client = Groq(api_key=groq_key)
 
     client = Groq(api_key=groq_key)
     prompt = EXTRACTION_PROMPT.format(
@@ -232,7 +198,6 @@ def run_groq(subject: str, body: str, sender: str) -> dict:
         current_year=datetime.now().year,
     )
 
-    log.info(f"Groq call for: '{subject[:60]}'")
     try:
         resp = client.chat.completions.create(
             model=GROQ_MODEL,
@@ -247,7 +212,6 @@ def run_groq(subject: str, body: str, sender: str) -> dict:
     raw = resp.choices[0].message.content.strip()
     log.info(f"Groq raw: {raw[:300]}")
 
-    # Strip code fences defensively
     if "```" in raw:
         parts = raw.split("```")
         raw = parts[1] if len(parts) >= 2 else raw
@@ -261,7 +225,7 @@ def run_groq(subject: str, body: str, sender: str) -> dict:
         log.error(f"JSON parse fail: {e} | raw: {raw}")
         raise HTTPException(status_code=500, detail=f"LLM returned invalid JSON: {e}")
 
-# ─── Calendar helper ──────────────────────────────────────────────────────────
+# ─── Calendar event builder ────────────────────────────────────────────────────
 
 def build_gcal_event(event: EventPayload) -> dict:
     try:
@@ -302,7 +266,7 @@ def build_gcal_event(event: EventPayload) -> dict:
 
 @app.get("/")
 def root():
-    return {"status": "Gmail Smart Calendar v2 running"}
+    return {"status": "Gmail Smart Calendar v3 running"}
 
 
 @app.get("/health")
@@ -320,7 +284,7 @@ def health():
 
 @app.get("/auth/google")
 def auth_google():
-    """Manually trigger Google OAuth. Open in browser if startup popup didn't appear."""
+    """Force Google OAuth. Navigate to this in browser if startup popup didn't appear."""
     global _calendar_service
     _calendar_service = None
     try:
@@ -330,46 +294,33 @@ def auth_google():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── NEW: Stage 2 extraction endpoint ──────────────────────────
-
 @app.post("/extract-event")
 async def extract_event(payload: EmailPayload):
-    # 1. Check local JSON cache
-    cache = load_email_cache()
-    if payload.email_id in cache:
-        log.info(f"Cache hit for {payload.email_id}")
-        return cache[payload.email_id]
+    """
+    Stage 2: Called ONLY after user clicks YES in the extension prompt.
+    Accepts an optional gmail_id for logging/tracing.
+    Returns structured event JSON from Groq.
+    """
+    if not payload.subject and not payload.body:
+        raise HTTPException(status_code=400, detail="Subject and body both empty.")
 
-    # 2. Call Groq if not found
+    gid_label = payload.gmail_id or "no-id"
+    log.info(f"[{gid_label}] Groq extraction requested: '{payload.subject[:60]}'")
+
     result = run_groq(payload.subject, payload.body, payload.sender)
-    
-    # 3. Save to JSON cache
-    save_to_email_cache(payload.email_id, result)
+
+    if result.get("should_create_event") and not result.get("date"):
+        log.warning(f"[{gid_label}] Groq returned should_create_event=true but no date — overriding.")
+        result["should_create_event"] = False
+
+    log.info(f"[{gid_label}] Extraction result: should_create={result.get('should_create_event')}, date={result.get('date')}")
     return result
-    # """
-    # Called ONLY after the user clicks YES in the Stage 1 popup.
-    # Uses Groq to extract structured event data from the email.
-    # Returns { should_create_event, title, date, start_time, end_time, timezone, description }
-    # """
-    # if not payload.subject and not payload.body:
-    #     raise HTTPException(status_code=400, detail="Subject and body both empty.")
 
-    # result = run_groq(payload.subject, payload.body, payload.sender)
-
-    # # Validate: if Groq says create but didn't produce a date, override
-    # if result.get("should_create_event") and not result.get("date"):
-    #     log.warning("Groq said should_create_event=true but no date — overriding.")
-    #     result["should_create_event"] = False
-
-    # return result
-
-
-# ── NEW: Calendar add endpoint ────────────────────────────────
 
 @app.post("/calendar/add")
 async def calendar_add(event: EventPayload):
     """
-    Called ONLY after user clicks 'Add to Calendar' in the approval popup.
+    Called ONLY after user approves the event in the popup.
     Creates the event in Google Calendar.
     """
     if not event.should_create_event:
@@ -378,9 +329,9 @@ async def calendar_add(event: EventPayload):
     log.info(f"Creating event: '{event.title}' on {event.date}")
 
     try:
-        service    = get_calendar_service()
-        body       = build_gcal_event(event)
-        created    = service.events().insert(calendarId="primary", body=body).execute()
+        service  = get_calendar_service()
+        body     = build_gcal_event(event)
+        created  = service.events().insert(calendarId="primary", body=body).execute()
 
         log.info(f"Created: {created.get('htmlLink')}")
         return {
@@ -396,15 +347,12 @@ async def calendar_add(event: EventPayload):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── Legacy routes (preserved for backward compatibility) ───────
+# ── Legacy aliases (backward compatibility) ───────────────────────────────────
 
 @app.post("/analyze")
-async def analyze_email_legacy(payload: EmailPayload):
-    """Legacy alias for /extract-event."""
+async def analyze_legacy(payload: EmailPayload):
     return await extract_event(payload)
-
 
 @app.post("/create-event")
 async def create_event_legacy(event: EventPayload):
-    """Legacy alias for /calendar/add."""
     return await calendar_add(event)
