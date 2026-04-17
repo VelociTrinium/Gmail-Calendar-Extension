@@ -3,7 +3,7 @@
 // ============================================================
 
 // ---------------- 1. THE RULE ENGINE ----------------
-const classificationRules = [
+
     // {
     //     id: "work",
     //     backgroundColor: "#cce5ff8a",
@@ -12,6 +12,8 @@ const classificationRules = [
     //     subjects: ["meeting", "project update", "urgent"],
     //     contents: ["zoom link", "google meet"]
     // },
+const classificationRules = [
+    
     {
         id: "internship",
         backgroundColor: "#68eb8688",
