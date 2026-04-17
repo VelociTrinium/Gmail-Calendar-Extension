@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
-GROQ_MODEL          = "llama3-70b-8192"
+GROQ_MODEL          = "llama-3.3-70b-versatile"
 GOOGLE_SCOPES       = ["https://www.googleapis.com/auth/calendar.events"]
 CREDENTIALS_PATH    = "credentials.json"
 TOKEN_PATH          = "token.json"
