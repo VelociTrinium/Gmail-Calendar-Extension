@@ -22,7 +22,7 @@ const classificationRules = [
     },
     {
         id: "chotadhobi",
-        backgroundColor: "#c054f28a",
+        backgroundColor: "#bd46f58a",
         textColor: "inherit",
         senders: ["boss@mycompany.com"],
         subjects: ["Chotadhobi", "Laundry ", "Delivery Confirmation"],
@@ -38,11 +38,19 @@ const classificationRules = [
     },
     {
         id: "academic",
-        backgroundColor: "#d571f47f",
+        backgroundColor: "#d680f076",
         textColor: "inherit",
         senders: [],
-        subjects: ["Lab", "Fat", "Cat"],
-        contents: ["assignment", "quiz"]
+        subjects: ["Lab", "Fat", "Cat", "calendar", "project", "report"],
+        contents: ["assignment", "quiz", "calendar", "project", "report"]
+    },
+    {
+        id: "congrats/greatings",
+        backgroundColor: "#4b4b4376",
+        textColor: "inherit",
+        senders: [],
+        subjects: ["congratulations", "season greetings"],
+        contents: ["congratulations", "season greetings"]
     },
 ];
 
@@ -194,11 +202,19 @@ const AI = (() => {
     const STORAGE_PREFIX = "gsc_gmail_";          // Keyed by Gmail ID, not hash
 
     // ── Module-level dedup state ───────────────────────────────────────────────
-    // Track last Gmail ID processed in this session to avoid re-running on every
-    // MutationObserver tick. We do NOT use data-ai-checked on the DOM element
-    // because Gmail reuses the same container div for different emails.
-    let lastProcessedGmailId = null;
-    let popupIsShown         = false;
+    // Stored on `window` so that if content.js is re-injected (e.g. via the
+    // popup's "Scan Emails" button), the new IIFE shares the same live flags
+    // instead of starting fresh and corrupting mid-flight state (loading popup
+    // gets removed by the new IIFE's MutationObserver before the Groq call
+    // finishes, causing the popup to stay stuck on "Calling Groq API").
+    if (window.__gscLastId    === undefined) window.__gscLastId    = null;
+    if (window.__gscPopupShown === undefined) window.__gscPopupShown = false;
+
+    // Convenience getters/setters that keep the rest of the code readable.
+    const getLastId    = ()  => window.__gscLastId;
+    const setLastId    = (v) => { window.__gscLastId = v; };
+    const getPopupShown = ()  => window.__gscPopupShown;
+    const setPopupShown = (v) => { window.__gscPopupShown = v; };
 
     // ── Time-sensitive regex patterns ──────────────────────────────────────────
     const PATTERNS = [
@@ -345,7 +361,7 @@ const AI = (() => {
 
     function removePopup() {
         document.getElementById(POPUP_ID)?.remove();
-        popupIsShown = false;
+        setPopupShown(false);
     }
 
     // Inject popup styles once into the page head
@@ -519,10 +535,17 @@ const AI = (() => {
      */
     function renderPopup(stage, data = {}) {
         ensureStyles();
-        removePopup();
 
-        if (popupIsShown) return;   // Extra safety guard
-        popupIsShown = true;
+        // Guard must be checked before removePopup() — removePopup() resets the
+        // flag to false, so checking after it would always pass and let a second
+        // simultaneous call through.  The only exception is explicit stage
+        // transitions (loading → event, loading → error) which call removePopup()
+        // themselves before calling renderPopup, so getPopupShown() is already
+        // false by the time they arrive here.
+        if (stage === "prompt" && getPopupShown()) return;
+
+        removePopup();      // tear down whatever popup exists (sets flag = false)
+        setPopupShown(true);
 
         const wrap   = document.createElement("div");
         wrap.id      = POPUP_ID;
@@ -679,11 +702,26 @@ const AI = (() => {
     // ── API calls ──────────────────────────────────────────────────────────────
 
     async function callExtractEvent(gmailId, subject, body, sender) {
-        const res = await fetch(`${BACKEND}/extract-event`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ gmail_id: gmailId, subject, body, sender }),
-        });
+        const controller = new AbortController();
+        const timeoutId  = setTimeout(() => controller.abort(), 25000); // 25 s hard limit
+
+        let res;
+        try {
+            res = await fetch(`${BACKEND}/extract-event`, {
+                method:  "POST",
+                headers: { "Content-Type": "application/json" },
+                body:    JSON.stringify({ gmail_id: gmailId, subject, body, sender }),
+                signal:  controller.signal,
+            });
+        } catch (e) {
+            if (e.name === "AbortError") {
+                throw new Error("Request timed out after 25 s. Is the backend running?");
+            }
+            throw e;
+        } finally {
+            clearTimeout(timeoutId);
+        }
+
         if (!res.ok) {
             const err = await res.json().catch(() => ({}));
             throw new Error(err?.detail || `Backend error ${res.status}`);
@@ -719,8 +757,8 @@ const AI = (() => {
         console.log(`[GSC] Gmail ID resolved via ${source}: ${gmailId}`);
 
         // Dedup: skip if we already ran the pipeline for this Gmail ID this session
-        if (gmailId === lastProcessedGmailId) return;
-        lastProcessedGmailId = gmailId;
+        if (gmailId === getLastId()) return;
+        setLastId(gmailId);
 
         // Check localStorage cache
         const record = loadRecord(gmailId);
@@ -770,7 +808,7 @@ const AI = (() => {
         }
 
         // Extra guard: don't stack multiple prompts
-        if (popupIsShown) return;
+        if (getPopupShown()) return;
 
         renderPopup("prompt", {
             gmailId,
@@ -831,8 +869,15 @@ const AI = (() => {
     // ── MutationObserver — watch for email opens ───────────────────────────────
     // Debounced at 700ms to avoid firing on every intermediate DOM mutation.
     // Triggers only when an email body (.a3s) is present in the DOM.
+    // If content.js is re-injected, disconnect the previous observer first so
+    // we never have more than one active at a time.
 
     let debounceTimer = null;
+
+    if (window.__gscObserver) {
+        window.__gscObserver.disconnect();
+        window.__gscObserver = null;
+    }
 
     const aiObserver = new MutationObserver(() => {
         clearTimeout(debounceTimer);
@@ -842,6 +887,7 @@ const AI = (() => {
         }, 700);
     });
 
+    window.__gscObserver = aiObserver;
     aiObserver.observe(document.body, { childList: true, subtree: true });
 
     // ── Helpers ────────────────────────────────────────────────────────────────
